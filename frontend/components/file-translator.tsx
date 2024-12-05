@@ -2,18 +2,45 @@
 
 import * as React from "react"
 import { FileUp, Upload, X } from 'lucide-react'
+import { io, Socket } from "socket.io-client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ScrollArea } from "@/components/ui/scroll-area"
+
+const socket: Socket = io('http://localhost:5001')
 
 export function FileTranslator() {
   const [file, setFile] = React.useState<File | null>(null)
   const [progress, setProgress] = React.useState(0)
   const [status, setStatus] = React.useState<string>("")
   const [isDragging, setIsDragging] = React.useState(false)
+  const [logs, setLogs] = React.useState<string[]>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const logRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    socket.on('progress', (data: { progress: number }) => {
+      setProgress(data.progress)
+    })
+
+    socket.on('log', (data: { message: string }) => {
+      setLogs(prev => [...prev, data.message])
+    })
+
+    return () => {
+      socket.off('progress')
+      socket.off('log')
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight
+    }
+  }, [logs])
 
   const handleDrop = React.useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -56,21 +83,19 @@ export function FileTranslator() {
 
     try {
       setStatus('Iniciando traducción...')
-      setProgress(10)
+      setProgress(0)
+      setLogs([])
 
       const response = await fetch('http://localhost:5001/translate', {
         method: 'POST',
         body: formData,
       })
 
-      setProgress(50)
-
       if (!response.ok) {
         throw new Error('Error en el servidor')
       }
 
       const data = await response.json()
-      setProgress(100)
       setStatus(data.message || 'Traducción completada con éxito')
     } catch (error) {
       setStatus('Error al procesar el archivo')
@@ -82,13 +107,14 @@ export function FileTranslator() {
     setFile(null)
     setProgress(0)
     setStatus('')
+    setLogs([])
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
   }, [])
 
   return (
-    <Card className="w-full max-w-xl mx-auto">
+    <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <FileUp className="h-5 w-5" />
@@ -154,6 +180,23 @@ export function FileTranslator() {
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         )}
+
+        <ScrollArea className="h-[200px] w-full rounded-md border bg-black p-4" ref={logRef}>
+          <div className="font-mono text-sm">
+            {logs.map((log, index) => (
+              <div 
+                key={index} 
+                className="text-green-500 animate-fade-in-down"
+                style={{
+                  animationDelay: `${index * 0.1}s`,
+                  textShadow: '0 0 5px #00ff00'
+                }}
+              >
+                {log}
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
 
         <Button 
           className="w-full" 
