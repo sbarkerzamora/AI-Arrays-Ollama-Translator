@@ -18,6 +18,7 @@ export function FileTranslator() {
   const [status, setStatus] = React.useState<string>("")
   const [isDragging, setIsDragging] = React.useState(false)
   const [logs, setLogs] = React.useState<string[]>([])
+  const [targetLanguage, setTargetLanguage] = React.useState('es') // Nuevo estado para el idioma de destino
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const logRef = React.useRef<HTMLDivElement>(null)
 
@@ -72,6 +73,10 @@ export function FileTranslator() {
     }
   }, [])
 
+  const handleLanguageChange = React.useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setTargetLanguage(e.target.value)
+  }, [])
+
   const handleTranslate = React.useCallback(async () => {
     if (!file) {
       setStatus('Por favor, selecciona un archivo primero.')
@@ -80,6 +85,7 @@ export function FileTranslator() {
 
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('target_language', targetLanguage) // Agregamos el idioma de destino al formulario
 
     try {
       setStatus('Iniciando traducción...')
@@ -101,7 +107,7 @@ export function FileTranslator() {
       setStatus('Error al procesar el archivo')
       console.error('Error:', error)
     }
-  }, [file])
+  }, [file, targetLanguage])
 
   const clearFile = React.useCallback(() => {
     setFile(null)
@@ -168,6 +174,24 @@ export function FileTranslator() {
           />
         </div>
 
+        <div className="mt-4">
+          <label htmlFor="language-select" className="text-sm text-muted-foreground">
+            Seleccione el idioma de destino:
+          </label>
+          <select
+            id="language-select"
+            value={targetLanguage}
+            onChange={handleLanguageChange}
+            className="ml-2 border rounded px-2 py-1"
+          >
+            <option value="es">Español</option>
+            <option value="fr">Francés</option>
+            <option value="de">Alemán</option>
+            <option value="pt">Portugués</option>
+            <option value="it">Italiano</option>
+          </select>
+        </div>
+
         {progress > 0 && (
           <div className="space-y-2">
             <Progress value={progress} />
@@ -210,4 +234,3 @@ export function FileTranslator() {
     </Card>
   )
 }
-

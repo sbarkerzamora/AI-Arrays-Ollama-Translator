@@ -3,7 +3,6 @@ import re
 import json
 import os
 import subprocess
-import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
@@ -14,17 +13,27 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Cargar el modelo de traducción más eficiente
-model_name = "Helsinki-NLP/opus-mt-en-es"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+# Cargar el modelo general (configurable según el idioma de destino)
+model_name_template = "Helsinki-NLP/opus-mt-en-{target_lang}"
+tokenizers = {}
+models = {}
+
+def load_model(target_language):
+    if target_language not in tokenizers:
+        model_name = model_name_template.format(target_lang=target_language)
+        tokenizers[target_language] = AutoTokenizer.from_pretrained(model_name)
+        models[target_language] = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        models[target_language].to(device)
+    return tokenizers[target_language], models[target_language]
 
 # Mover el modelo a la GPU si está disponible
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
 
-def translate_text(text):
+def translate_text(text, target_language):
     try:
+        # Cargar el tokenizador y el modelo para el idioma de destino
+        tokenizer, model = load_model(target_language)
+
         # Preservar placeholders y variables de Laravel
         placeholders = re.findall(r'(:\w+|\{\{\s*.+?\s*\}\})', text)
         temp_text = text
@@ -63,17 +72,17 @@ def count_strings(data):
         count += 1
     return count
 
-def translate_values(data, progress_info):
+def translate_values(data, progress_info, target_language):
     # Traducir los valores en el diccionario
     if isinstance(data, dict):
         for key, value in data.items():
-            data[key] = translate_values(value, progress_info)
+            data[key] = translate_values(value, progress_info, target_language)
     elif isinstance(data, list):
         for idx, item in enumerate(data):
-            data[idx] = translate_values(item, progress_info)
+            data[idx] = translate_values(item, progress_info, target_language)
     elif isinstance(data, str):
         original_text = data
-        translation = translate_text(original_text)
+        translation = translate_text(original_text, target_language)
         progress_info['current'] += 1
         progress = int((progress_info['current'] / progress_info['total']) * 100)
         socketio.emit('progress', {'progress': progress})
@@ -163,6 +172,7 @@ def translate():
     file = request.files['file']
     filename = file.filename
     content = file.read().decode('utf-8')
+    target_language = request.form.get('target_language', 'es')  # Idioma de destino predeterminado: español
 
     # Convertir el array PHP a JSON
     data = php_array_to_json(content)
@@ -174,7 +184,7 @@ def translate():
     progress_info = {'current': 0, 'total': total_strings}
 
     # Traducir los valores
-    data = translate_values(data, progress_info)
+    data = translate_values(data, progress_info, target_language)
 
     # Convertir el JSON traducido a array PHP
     translated_php_array = json_to_php_array(data)
