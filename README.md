@@ -82,7 +82,7 @@ El frontend estará disponible en http://localhost:3000.
 
 ### Licencia
 
-Este proyecto está licenciado bajo la Licencia MIT. Consulta el archivo LICENSE para obtener más información.
+Este proyecto está licenciado bajo la Apache License. Consulta el archivo LICENSE para obtener más información.
 
 ### Contacto
 
