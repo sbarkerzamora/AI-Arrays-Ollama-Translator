@@ -1,18 +1,27 @@
 import eventlet
-eventlet.monkey_patch()
-
+import re
+import json
+import os
+import subprocess
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
-import os
-import re
-import json
-import subprocess
-import requests  # Importamos requests
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+import torch
 
 app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Cargar el modelo de traducción más eficiente
+model_name = "Helsinki-NLP/opus-mt-en-es"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+# Mover el modelo a la GPU si está disponible
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
 
 def translate_text(text):
     try:
@@ -25,36 +34,18 @@ def translate_text(text):
             placeholder_map[placeholder_token] = placeholder
             temp_text = temp_text.replace(placeholder, placeholder_token)
 
-        # Preparar el prompt para Ollama
-        prompt = f"Translate the following text from English to Spanish, keeping placeholders like __PLACEHOLDER_#__ unchanged. Provide only the translation.\n\n{temp_text}"
+        # Preparar el prompt para el modelo de traducción
+        inputs = tokenizer(temp_text, return_tensors="pt").to(device)
 
-        # Configurar la solicitud a la API de Ollama
-        payload = {
-            "model": "mistral-small",  # Asegúrate de usar el nombre correcto del modelo
-            "prompt": prompt
-        }
-
-        # Realizar la solicitud a Ollama
-        response = requests.post('http://localhost:11434/generate', json=payload, stream=True)
-
-        if response.status_code != 200:
-            print(f"Error al conectar con Ollama: {response.text}")
-            return text  # Devolver el texto original en caso de error
-
-        # Procesar la respuesta de Ollama
-        result = ''
-        for line in response.iter_lines():
-            if line:
-                data = json.loads(line.decode('utf-8'))
-                result += data.get('response', '')
-
-        translated_text = result.strip()
+        # Generar la traducción
+        outputs = model.generate(**inputs, max_length=512, num_beams=5, early_stopping=True)
+        translated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         # Restaurar placeholders
         for placeholder_token, placeholder in placeholder_map.items():
             translated_text = translated_text.replace(placeholder_token, placeholder)
 
-        return translated_text
+        return translated_text.strip()
     except Exception as e:
         print(f"Error en translate_text:\n\n{str(e)}\n")
         return text  # En caso de error, devolver el texto original
